@@ -93,6 +93,26 @@ enum GPIO_PORT_MODE {
   GPIO_MODE_ANALOG = 3,
 };
 
+enum GPIO_INTERRUPT_MODE {
+  GPIO_INTERRUPT_MODE_FALLING_EDGE = 1, GPIO_INTERRUPT_MODE_RISING_EDGE = 2,
+};
+
+enum {
+  IRQ_EXTI0 = 6,
+  IRQ_EXTI1 = 7,
+  IRQ_EXTI2 = 8,
+  IRQ_EXTI3 = 9,
+  IRQ_EXTI4 = 10,
+  IRQ_EXTI9_5 = 23,
+  IRQ_EXTI15_10 = 40,
+  IRQ_EXTI16 = 1,
+  IRQ_EXTI17 = 41,
+  IRQ_EXTI18 = 42,
+  IRQ_EXTI19 = 42,
+  IRQ_EXTI21 = 2,
+  IRQ_EXTI22 = 3,
+};
+
 enum GPIO_PORT_OTYPE {
   GPIO_OUTPUT_TYPE_PUSH_PULL = 0, GPIO_OUTPUT_TYPE_OPEN_DRAIN = 1,
 };
@@ -208,8 +228,34 @@ typedef struct {
 } RCC_Registers_t;
 
 typedef struct {
+  uint32_t volatile EXTI_IMR; // Interrupt mask register
+  uint32_t volatile EXTI_EMR; // Event mask register
+  uint32_t volatile EXTI_RTSR; // Rising trigger selection register
+  uint32_t volatile EXTI_FTSR; // Falling trigger selection register
+  uint32_t volatile EXTI_SWIER; // Software interrupt event register
+  uint32_t volatile EXTI_PR; // Pending register
+} EXTI_Registers_t;
+
+enum SYSCFG_EXTICR {
+  SYSCFG_EXTICR_PA = 0,
+  SYSCFG_EXTICR_PB = 1,
+  SYSCFG_EXTICR_PC = 2,
+  SYSCFG_EXTICR_PD = 3,
+  SYSCFG_EXTICR_PE = 4,
+  SYSCFG_EXTICR_PH = 7,
+};
+
+typedef struct {
+  uint32_t volatile SYSCFG_MEMRMP;    // SYSCFG memory remap register
+  uint32_t volatile SYSCFG_PMC; // SYSCFG peripheral mode configuration register
+  uint32_t volatile SYSCFG_EXTICR[4]; // SYSCFG external interrupt configuration registers
+  uint32_t volatile SYSCFG_CMPCR;     // Compensation cell control register
+} SYSCFG_Registers_t;
+
+typedef struct {
   uint8_t number;
   uint8_t mode;
+  uint8_t interruptModeMask;
   uint8_t speed;
   uint8_t pullUpPullDown;
   uint8_t outputType;
@@ -223,15 +269,15 @@ typedef struct {
 
 /* Globals */
 
-#define GPIOA ((GPIO_Registers_t *)GPIO_PORT_A_ADDR)
-#define GPIOB ((GPIO_Registers_t *)GPIO_PORT_B_ADDR)
-#define GPIOC ((GPIO_Registers_t *)GPIO_PORT_C_ADDR)
-#define GPIOD ((GPIO_Registers_t *)GPIO_PORT_D_ADDR)
-#define GPIOE ((GPIO_Registers_t *)GPIO_PORT_E_ADDR)
-#define GPIOH ((GPIO_Registers_t *)GPIO_PORT_H_ADDR)
-#define RCC ((RCC_Registers_t*)RCC_BASE_ADDR)
-
-RCC_Registers_t *pRCC = (RCC_Registers_t*) RCC_BASE_ADDR;
+#define RCC    ((RCC_Registers_t *)RCC_BASE_ADDR)
+#define EXTI   ((EXTI_Registers_t *)EXTI_BASE_ADDR)
+#define GPIOA  ((GPIO_Registers_t *)GPIO_PORT_A_ADDR)
+#define GPIOB  ((GPIO_Registers_t *)GPIO_PORT_B_ADDR)
+#define GPIOC  ((GPIO_Registers_t *)GPIO_PORT_C_ADDR)
+#define GPIOD  ((GPIO_Registers_t *)GPIO_PORT_D_ADDR)
+#define GPIOE  ((GPIO_Registers_t *)GPIO_PORT_E_ADDR)
+#define GPIOH  ((GPIO_Registers_t *)GPIO_PORT_H_ADDR)
+#define SYSCFG ((SYSCFG_Registers_t *)SYSCFG_BASE_ADDR)
 
 uint32_t *const g_pRccAHB1ENR = (uint32_t*) RCC_AHB1ENR_ADDR;
 RCC_AHB1ENR_t *const g_RccAHB1ENR = (RCC_AHB1ENR_t*) RCC_AHB1ENR_ADDR;
@@ -272,86 +318,90 @@ void gpio_init(GPIO_Handle_t *handle) {
   port->OTYPER |= (handle->pinConfig.outputType << handle->pinConfig.number);
 
   // Set the GPIO mode for the corresponding pin
-  uint8_t pos = (handle->pinConfig.number * 2);
-  if (handle->port == GPIOA) {
-    handle->port->MODER &= ~(0x3 << pos);
-    handle->port->MODER |= (handle->pinConfig.mode << pos);
-
-    handle->port->OSPEEDR &= ~(0x3 << pos);
-    handle->port->OSPEEDR |= (handle->pinConfig.speed << pos);
-
-    handle->port->PUPDR &= ~(0x3 << pos);
-    handle->port->PUPDR |= (handle->pinConfig.pullUpPullDown << pos);
-  } else if (handle->port == GPIOB) {
-    handle->port->MODER &= ~(0x3 << pos);
-    handle->port->MODER |= (handle->pinConfig.mode << pos);
-
-    handle->port->OSPEEDR &= ~(0x3 << pos);
-    handle->port->OSPEEDR |= (handle->pinConfig.speed << pos);
-
-    handle->port->PUPDR &= ~(0x3 << pos);
-    handle->port->PUPDR |= (handle->pinConfig.pullUpPullDown << pos);
-  } else if (handle->port == GPIOC) {
-    handle->port->MODER &= ~(0x3 << pos);
-    handle->port->MODER |= (handle->pinConfig.mode << pos);
-
-    handle->port->OSPEEDR &= ~(0x3 << pos);
-    handle->port->OSPEEDR |= (handle->pinConfig.speed << pos);
-
-    handle->port->PUPDR &= ~(0x3 << pos);
-    handle->port->PUPDR |= (handle->pinConfig.pullUpPullDown << pos);
-  } else if (handle->port == GPIOD) {
-    handle->port->MODER &= ~(0x3 << pos);
-    handle->port->MODER |= (handle->pinConfig.mode << pos);
-
-    handle->port->OSPEEDR &= ~(0x3 << pos);
-    handle->port->OSPEEDR |= (handle->pinConfig.speed << pos);
-
-    handle->port->PUPDR &= ~(0x3 << pos);
-    handle->port->PUPDR |= (handle->pinConfig.pullUpPullDown << pos);
-  } else if (handle->port == GPIOE) {
-    handle->port->MODER &= ~(0x3 << pos);
-    handle->port->MODER |= (handle->pinConfig.mode << pos);
-
-    handle->port->OSPEEDR &= ~(0x3 << pos);
-    handle->port->OSPEEDR |= (handle->pinConfig.speed << pos);
-
-    handle->port->PUPDR &= ~(0x3 << pos);
-    handle->port->PUPDR |= (handle->pinConfig.pullUpPullDown << pos);
-  } else if (handle->port == GPIOH) {
+  if (handle->port == GPIOH) {
     // STM32F411xC/E only supports pin 0 and 1 on port H
     assert(handle->pinConfig.number < 2);
-
-    handle->port->MODER &= ~(0x3 << pos);
-    handle->port->MODER |= (handle->pinConfig.mode << pos);
-
-    handle->port->OSPEEDR &= ~(0x3 << pos);
-    handle->port->OSPEEDR |= (handle->pinConfig.speed << pos);
-
-    handle->port->PUPDR &= ~(0x3 << pos);
-    handle->port->PUPDR |= (handle->pinConfig.pullUpPullDown << pos);
   }
+
+  uint8_t pos = (handle->pinConfig.number * 2);
+
+  handle->port->MODER &= ~(0x3 << pos);
+  handle->port->MODER |= (handle->pinConfig.mode << pos);
+
+  if (handle->pinConfig.interruptModeMask != 0) {
+    // GPIO pin must be in Input mode to support interrupts
+    assert(handle->pinConfig.mode == GPIO_MODE_INPUT);
+
+    if ((handle->pinConfig.interruptModeMask & GPIO_INTERRUPT_MODE_FALLING_EDGE)
+        == GPIO_INTERRUPT_MODE_FALLING_EDGE) {
+      EXTI->EXTI_FTSR |= (1 << handle->pinConfig.number);
+    } else {
+      EXTI->EXTI_FTSR &= ~(1 << handle->pinConfig.number);
+    }
+
+    if ((handle->pinConfig.interruptModeMask & GPIO_INTERRUPT_MODE_RISING_EDGE)
+        == GPIO_INTERRUPT_MODE_RISING_EDGE) {
+      EXTI->EXTI_RTSR |= (1 << handle->pinConfig.number);
+    } else {
+      EXTI->EXTI_RTSR &= ~(1 << handle->pinConfig.number);
+    }
+
+    uint8_t registerNumber = handle->pinConfig.number / 4;
+    uint8_t shl = handle->pinConfig.number % 4;
+
+    uint8_t exticrVal;
+    if (handle->port == GPIOA) {
+      exticrVal = SYSCFG_EXTICR_PA;
+    } else if (handle->port == GPIOB) {
+      exticrVal = SYSCFG_EXTICR_PB;
+    } else if (handle->port == GPIOC) {
+      exticrVal = SYSCFG_EXTICR_PC;
+    } else if (handle->port == GPIOD) {
+      exticrVal = SYSCFG_EXTICR_PD;
+    } else if (handle->port == GPIOE) {
+      exticrVal = SYSCFG_EXTICR_PE;
+    } else if (handle->port == GPIOH) {
+      exticrVal = SYSCFG_EXTICR_PH;
+    } else {
+      assert("Unexpected GPIO port");
+    }
+
+    // Enable the clock for SYSCFG
+    RCC->APB2ENR |= (1 << 14);
+
+    SYSCFG->SYSCFG_EXTICR[registerNumber] &= ~(0xF << (shl * 4));
+    SYSCFG->SYSCFG_EXTICR[registerNumber] |= (exticrVal << (shl * 4));
+
+    // enable exti_imr
+    EXTI->EXTI_IMR |= (1 << handle->pinConfig.number);
+  }
+
+  handle->port->OSPEEDR &= ~(0x3 << pos);
+  handle->port->OSPEEDR |= (handle->pinConfig.speed << pos);
+
+  handle->port->PUPDR &= ~(0x3 << pos);
+  handle->port->PUPDR |= (handle->pinConfig.pullUpPullDown << pos);
 }
 
 void gpio_deinit(GPIO_Handle_t *handle) {
   if (handle->port == GPIOA) {
-    pRCC->AHB1RSTR |= (1 << 0);
-    pRCC->AHB1RSTR &= ~(1 << 0);
+    RCC->AHB1RSTR |= (1 << 0);
+    RCC->AHB1RSTR &= ~(1 << 0);
   } else if (handle->port == GPIOB) {
-    pRCC->AHB1RSTR |= (1 << 1);
-    pRCC->AHB1RSTR &= ~(1 << 1);
+    RCC->AHB1RSTR |= (1 << 1);
+    RCC->AHB1RSTR &= ~(1 << 1);
   } else if (handle->port == GPIOC) {
-    pRCC->AHB1RSTR |= (1 << 2);
-    pRCC->AHB1RSTR &= ~(1 << 2);
+    RCC->AHB1RSTR |= (1 << 2);
+    RCC->AHB1RSTR &= ~(1 << 2);
   } else if (handle->port == GPIOD) {
-    pRCC->AHB1RSTR |= (1 << 3);
-    pRCC->AHB1RSTR &= ~(1 << 3);
+    RCC->AHB1RSTR |= (1 << 3);
+    RCC->AHB1RSTR &= ~(1 << 3);
   } else if (handle->port == GPIOE) {
-    pRCC->AHB1RSTR |= (1 << 4);
-    pRCC->AHB1RSTR &= ~(1 << 4);
+    RCC->AHB1RSTR |= (1 << 4);
+    RCC->AHB1RSTR &= ~(1 << 4);
   } else if (handle->port == GPIOH) {
-    pRCC->AHB1RSTR |= (1 << 7);
-    pRCC->AHB1RSTR &= ~(1 << 7);
+    RCC->AHB1RSTR |= (1 << 7);
+    RCC->AHB1RSTR &= ~(1 << 7);
   }
 }
 

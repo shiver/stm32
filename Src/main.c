@@ -99,7 +99,22 @@ void ledWithPushPull() {
     }
 }
 
+void interrupt() {
+  GPIO_Handle_t button = {
+      .port = GPIOB,
+      .pinConfig = {
+          .number = 1,
+          .mode = GPIO_MODE_INPUT,
+          .interruptModeMask = GPIO_INTERRUPT_MODE_FALLING_EDGE,
+      }
+  };
+
+  gpio_init(&button);
+
+  for(;;);
+}
+
 int main(void)
 {
-  ledWithPushPull();
+  interrupt();
 }
